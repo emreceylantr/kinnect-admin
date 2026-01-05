@@ -47,7 +47,7 @@ class _UserProfileDetailScreenState extends State<UserProfileDetailScreen> with 
     });
   }
 
-  // 🔥 GÜVENLİ LOG ÇEKME (HATA KORUMALI)
+  // 🔥 GÜVENLİ LOG ÇEKME
   Future<List<Map<String, dynamic>>> _fetchAllUserActivity() async {
     try {
       final client = Supabase.instance.client;
@@ -61,7 +61,6 @@ class _UserProfileDetailScreenState extends State<UserProfileDetailScreen> with 
           'icon': Icons.grid_view,
           'color': Colors.blueAccent,
           'title': 'Yeni Gönderi',
-          // Null gelirse 'Görsel' yaz, .toString() ile garanti string yap
           'detail': (p['content'] ?? 'Görsel Paylaşımı').toString(),
           'date': DateTime.parse(p['created_at']),
           'target_post_id': p['id'],
@@ -99,7 +98,6 @@ class _UserProfileDetailScreenState extends State<UserProfileDetailScreen> with 
 
       allLogs.sort((a, b) => b['date'].compareTo(a['date']));
       return allLogs;
-
     } catch (e) {
       debugPrint("Log hatası: $e");
       return [];
@@ -310,7 +308,6 @@ class _UserProfileDetailScreenState extends State<UserProfileDetailScreen> with 
         final allLogs = snapshot.data ?? [];
         final logs = _selectedLogFilter == 'all' ? allLogs : allLogs.where((l) => l['type'] == _selectedLogFilter).toList();
 
-        // Tarih formatı (Standart format - Hata vermez)
         String lastSeenText = "Bilinmiyor";
         if (allLogs.isNotEmpty) {
           lastSeenText = DateFormat('dd/MM/yyyy HH:mm').format(allLogs.first['date']);
@@ -367,7 +364,6 @@ class _UserProfileDetailScreenState extends State<UserProfileDetailScreen> with 
   }
 
   Widget _buildTimelineItem(Map<String, dynamic> log, bool isLast) {
-    // 🚩 DÜZELTME: 'tr_TR' yerine standart format kullanıldı. Kırmızı ekranın çözümü bu.
     final dateStr = DateFormat('dd/MM HH:mm').format(log['date']);
     final Color itemColor = log['color'];
 
@@ -419,6 +415,7 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   @override bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
 }
 
+// 🔥🔥🔥 POST DETAIL POPUP (GÜNCELLENMİŞ HALİ) 🔥🔥🔥
 class PostDetailPopup extends StatefulWidget {
   final Map<String, dynamic> post;
   final String? userAvatar;
@@ -471,37 +468,34 @@ class _PostDetailPopupState extends State<PostDetailPopup> {
     try { await _audioPlayer.stop(); await _audioPlayer.play(UrlSource(url)); } catch (e) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e"))); }
   }
 
+  // 🔥 TEKİL YORUM SİLME (YENİ HALİ)
   Future<void> _deleteSingleComment(String commentId) async {
-    await Supabase.instance.client.from('comments').delete().eq('id', commentId);
-    setState(() { _comments.removeWhere((c) => c['id'] == commentId); });
+    try {
+      await Supabase.instance.client.from('comments').delete().eq('id', commentId);
+      setState(() { _comments.removeWhere((c) => c['id'] == commentId); });
+      widget.onDelete(); // Ana sayfadaki logları yenilemek için tetikle
+    } catch (e) {
+      debugPrint("Yorum silinemedi: $e");
+    }
   }
 
-  // 🔥🔥🔥 GELİŞMİŞ SİLME (BİLDİRİMLER DAHİL) 🔥🔥🔥
+  // 🔥 POST SİLME (CASCADE DESTEKLİ)
   Future<void> _deletePost() async {
-    final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(backgroundColor: const Color(0xFF27293D), title: const Text("Postu Sil?", style: TextStyle(color: Colors.white)), content: const Text("Post, yorumlar, beğeniler ve bildirimler tamamen silinecek.", style: TextStyle(color: Colors.white70)), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("İptal", style: TextStyle(color: Colors.white70))), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red), onPressed: () => Navigator.pop(c, true), child: const Text("SİL"))]));
+    final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(backgroundColor: const Color(0xFF27293D), title: const Text("Postu Sil?", style: TextStyle(color: Colors.white)), content: const Text("Post, yorumlar, beğeniler tamamen silinecek.", style: TextStyle(color: Colors.white70)), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("İptal", style: TextStyle(color: Colors.white70))), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red), onPressed: () => Navigator.pop(c, true), child: const Text("SİL"))]));
 
     if (confirm == true) {
       try {
         final postId = widget.post['id'];
-        final client = Supabase.instance.client;
-
-        // 1. Önce Beğenileri Sil
-        await client.from('likes').delete().eq('post_id', postId);
-        // 2. Sonra Yorumları Sil
-        await client.from('comments').delete().eq('post_id', postId);
-        // 3. Varsa Bildirimleri Sil (Genelde notifications tablosu olur)
-        try { await client.from('notifications').delete().eq('related_post_id', postId); } catch (_) {}
-        // 4. En Son Postu Sil
-        await client.from('posts').delete().eq('id', postId);
+        // Cascade aktif olduğu için sadece postu siliyoruz
+        await Supabase.instance.client.from('posts').delete().eq('id', postId);
 
         if (mounted) {
           Navigator.pop(context);
-          widget.onDelete();
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Post ve ilişkili tüm veriler silindi.")));
+          widget.onDelete(); // Ana listeyi tazele
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Post başarıyla silindi.")));
         }
       } catch (e) {
         debugPrint("Silme hatası: $e");
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Silinemedi: $e")));
       }
     }
   }
@@ -530,7 +524,7 @@ class _PostDetailPopupState extends State<PostDetailPopup> {
   Widget _panel() => Container(color: const Color(0xFF27293D), child: Column(children: [
     ListTile(leading: CircleAvatar(backgroundImage: widget.userAvatar != null ? NetworkImage(widget.userAvatar!) : null), title: Text(widget.userName, style: GoogleFonts.poppins(color: Colors.white)), trailing: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context))),
     const Divider(color: Colors.white10),
-    Expanded(child: ListView(padding: const EdgeInsets.all(16), children: _comments.map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Expanded(child: _isLoading ? const Center(child: CircularProgressIndicator()) : ListView(padding: const EdgeInsets.all(16), children: _comments.map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       CircleAvatar(radius: 14, backgroundImage: c['profiles']['avatar_url'] != null ? NetworkImage(c['profiles']['avatar_url']) : null), const SizedBox(width: 8),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(c['profiles']['username'] ?? '?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-// Diğer sayfaları import ediyoruz
+import '../admin_theme.dart';
 import 'login_screen.dart';
 import 'dashboard_screen.dart';
 import 'users_screen.dart';
-import 'reports_screen.dart'; // 🔥 EKSİK OLAN BUYDU! Bunu ekledik.
+import 'reports_screen.dart';
+import 'ai_matching_screen.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -16,70 +16,96 @@ class MainLayout extends StatefulWidget {
 }
 
 class _MainLayoutState extends State<MainLayout> {
-  int _selectedIndex = 0; // Hangi sayfanın seçili olduğunu tutar
+  int _selectedIndex = 0;
 
-  // Sayfaların Listesi (Menü sırasına göre)
-  final List<Widget> _screens = [
-    const DashboardScreen(), // 0. Dashboard
-    const UsersScreen(),     // 1. Kullanıcılar
-    const ReportsScreen(),   // 2. 🔥 ARTIK GERÇEK ŞİKAYET EKRANI BAĞLI!
-    const Center(child: Text("Sistem Ayarları (Yakında)")),  // 3. Placeholder
+  final _screens = const [
+    DashboardScreen(),
+    UsersScreen(),
+    ReportsScreen(),
+    AiMatchingScreen(),
+  ];
+
+  final _navItems = const [
+    _NavItem(icon: Icons.grid_view_rounded, label: 'Dashboard'),
+    _NavItem(icon: Icons.people_outline_rounded, label: 'Kullanıcılar'),
+    _NavItem(icon: Icons.flag_outlined, label: 'Şikayetler'),
+    _NavItem(icon: Icons.auto_awesome_rounded, label: 'AI Eşleşme'),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AC.bg,
       body: Row(
         children: [
-          // --- SOL SIDEBAR (MENÜ) ---
+          // Sidebar
           Container(
-            width: 260,
-            color: const Color(0xFF2A2D3E), // Sidebar Rengi
+            width: 220,
+            color: AC.surface,
             child: Column(
               children: [
-                // Logo Alanı
+                // Logo
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 40.0, horizontal: 24.0),
+                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
                   child: Row(
                     children: [
-                      const Icon(Icons.admin_panel_settings, color: Colors.blueAccent, size: 32),
-                      const SizedBox(width: 12),
-                      Text(
-                          "Kinnect",
-                          style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(colors: [AC.indigoDark, AC.purple]),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.shield_rounded, color: Colors.white, size: 16),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Kinnect', style: GoogleFonts.inter(color: AC.text, fontSize: 14, fontWeight: FontWeight.w700)),
+                          Text('Admin', style: GoogleFonts.inter(color: AC.textMuted, fontSize: 11)),
+                        ],
                       ),
                     ],
                   ),
                 ),
 
-                // Menü Linkleri
-                _buildMenuItem(0, "Dashboard", Icons.dashboard_outlined),
-                _buildMenuItem(1, "Kullanıcılar", Icons.people_outline),
-                _buildMenuItem(2, "Şikayetler", Icons.report_gmailerrorred_outlined),
-                _buildMenuItem(3, "Ayarlar", Icons.settings_outlined),
+                // Divider
+                Container(height: 1, margin: const EdgeInsets.symmetric(horizontal: 16), color: AC.border),
+                const SizedBox(height: 12),
 
-                const Spacer(), // Çıkış butonunu en alta iter
+                // Nav items
+                ...List.generate(_navItems.length, (i) => _buildNavItem(i)),
 
-                // Çıkış Butonu
+                const Spacer(),
+
+                // Divider
+                Container(height: 1, margin: const EdgeInsets.symmetric(horizontal: 16), color: AC.border),
+                const SizedBox(height: 8),
+
+                // Logout
                 Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      hoverColor: AC.danger.withValues(alpha: 0.08),
+                      onTap: () async {
                         await Supabase.instance.client.auth.signOut();
                         if (mounted) {
-                          Navigator.of(context).pushReplacement(
-                            MaterialPageRoute(builder: (_) => const LoginScreen()),
-                          );
+                          Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
                         }
                       },
-                      icon: const Icon(Icons.logout, size: 18),
-                      label: const Text("Çıkış Yap"),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.redAccent,
-                        side: BorderSide(color: Colors.redAccent.withOpacity(0.5)),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.logout_rounded, color: AC.danger, size: 16),
+                            const SizedBox(width: 10),
+                            Text('Çıkış Yap', style: GoogleFonts.inter(color: AC.danger, fontSize: 13, fontWeight: FontWeight.w500)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -88,50 +114,55 @@ class _MainLayoutState extends State<MainLayout> {
             ),
           ),
 
-          // --- SAĞ İÇERİK ALANI ---
-          Expanded(
-            child: Container(
-              color: const Color(0xFF212332), // Ana içerik arkaplanı
-              child: _screens[_selectedIndex],
-            ),
-          ),
+          // Content
+          Expanded(child: _screens[_selectedIndex]),
         ],
       ),
     );
   }
 
-  // Menü Elemanı Tasarımı
-  Widget _buildMenuItem(int index, String title, IconData icon) {
-    final bool isSelected = _selectedIndex == index;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => setState(() => _selectedIndex = index),
-        hoverColor: Colors.white.withOpacity(0.05),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          decoration: BoxDecoration(
-            border: isSelected
-                ? const Border(left: BorderSide(color: Colors.blueAccent, width: 4))
-                : null,
-            color: isSelected ? Colors.white.withOpacity(0.05) : Colors.transparent,
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: isSelected ? Colors.blueAccent : Colors.grey, size: 22),
-              const SizedBox(width: 16),
-              Text(
-                title,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.grey,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  fontSize: 15,
+  Widget _buildNavItem(int index) {
+    final item = _navItems[index];
+    final isSelected = _selectedIndex == index;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          hoverColor: AC.indigo.withValues(alpha: 0.06),
+          onTap: () => setState(() => _selectedIndex = index),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: isSelected ? AC.indigo.withValues(alpha: 0.12) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(item.icon, size: 16, color: isSelected ? AC.indigo : AC.textMuted),
+                const SizedBox(width: 10),
+                Text(
+                  item.label,
+                  style: GoogleFonts.inter(
+                    color: isSelected ? AC.text : AC.textSub,
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _NavItem {
+  final IconData icon;
+  final String label;
+  const _NavItem({required this.icon, required this.label});
 }

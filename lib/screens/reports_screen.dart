@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:audioplayers/audioplayers.dart';
+import 'package:intl/intl.dart';
+import '../admin_theme.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -15,11 +17,8 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   bool _isLoading = true;
   List<Map<String, dynamic>> _allReports = [];
   List<Map<String, dynamic>> _filteredReports = [];
-
   late TabController _tabController;
-  final TextEditingController _searchController = TextEditingController();
-
-  // 🎵 Ses Oynatıcı
+  final _searchController = TextEditingController();
   final AudioPlayer _audioPlayer = AudioPlayer();
   String? _currentlyPlayingUrl;
 
@@ -27,8 +26,9 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() => setState(() {}));
     _fetchReports();
-    _searchController.addListener(_onSearchChanged);
+    _searchController.addListener(_onSearch);
   }
 
   @override
@@ -39,35 +39,17 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
     super.dispose();
   }
 
-  // 🎵 Ses Çalma Fonksiyonu
-  Future<void> _playAudio(String url) async {
-    try {
-      if (_currentlyPlayingUrl == url) {
-        await _audioPlayer.stop();
-        setState(() => _currentlyPlayingUrl = null);
-      } else {
-        await _audioPlayer.stop();
-        await _audioPlayer.play(UrlSource(url));
-        setState(() => _currentlyPlayingUrl = url);
-
-        _audioPlayer.onPlayerComplete.listen((event) {
-          if (mounted) setState(() => _currentlyPlayingUrl = null);
-        });
-      }
-    } catch (e) {
-      debugPrint("Ses çalma hatası: $e");
-    }
-  }
-
-  void _onSearchChanged() {
-    final query = _searchController.text.toLowerCase();
+  void _onSearch() {
+    final q = _searchController.text.toLowerCase();
     setState(() {
-      _filteredReports = _allReports.where((report) {
-        final username = (report['reporter']?['username'] ?? '').toString().toLowerCase();
-        final reason = (report['reason'] ?? '').toString().toLowerCase();
-        final desc = (report['description'] ?? '').toString().toLowerCase();
-        return username.contains(query) || reason.contains(query) || desc.contains(query);
-      }).toList();
+      _filteredReports = q.isEmpty
+          ? _allReports
+          : _allReports.where((r) {
+              final username = (r['reporter']?['username'] ?? '').toString().toLowerCase();
+              final reason = (r['reason'] ?? '').toString().toLowerCase();
+              final desc = (r['description'] ?? '').toString().toLowerCase();
+              return username.contains(q) || reason.contains(q) || desc.contains(q);
+            }).toList();
     });
   }
 
@@ -78,439 +60,440 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           .from('reports')
           .select('*, reporter:profiles!reporter_id(username, avatar_url, full_name)')
           .order('created_at', ascending: false);
-
-      setState(() {
-        _allReports = List<Map<String, dynamic>>.from(response);
-        _filteredReports = _allReports;
-        _isLoading = false;
-      });
-      if (_searchController.text.isNotEmpty) _onSearchChanged();
+      if (mounted) {
+        setState(() {
+          _allReports = List<Map<String, dynamic>>.from(response);
+          _filteredReports = _allReports;
+          _isLoading = false;
+        });
+        if (_searchController.text.isNotEmpty) _onSearch();
+      }
     } catch (e) {
-      debugPrint("Hata: $e");
+      debugPrint('Reports fetch error: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // Listeyi güncelleme callback'i
-  void _refreshList() {
-    _fetchReports();
+  Future<void> _playAudio(String url) async {
+    try {
+      if (_currentlyPlayingUrl == url) {
+        await _audioPlayer.stop();
+        setState(() => _currentlyPlayingUrl = null);
+      } else {
+        await _audioPlayer.stop();
+        await _audioPlayer.play(UrlSource(url));
+        setState(() => _currentlyPlayingUrl = url);
+        _audioPlayer.onPlayerComplete.listen((_) {
+          if (mounted) setState(() => _currentlyPlayingUrl = null);
+        });
+      }
+    } catch (e) {
+      debugPrint('Audio error: $e');
+    }
+  }
+
+  List<Map<String, dynamic>> _getTabList(String status) {
+    return _filteredReports.where((r) {
+      final s = r['status'] ?? 'pending';
+      if (status == 'pending') return s == 'pending';
+      return s == status;
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
+    final pendingCount = _allReports.where((r) => (r['status'] ?? 'pending') == 'pending').length;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E2C),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF27293D),
-        elevation: 0,
-        title: Container(
-          height: 40,
-          decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-          child: TextField(
-            controller: _searchController,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              hintText: "Ara...",
-              prefixIcon: Icon(Icons.search, color: Colors.white38),
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      backgroundColor: AC.bg,
+      body: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Şikayetler', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w700, color: AC.text)),
+                    const SizedBox(height: 2),
+                    Text('${_allReports.length} toplam şikayet', style: GoogleFonts.inter(fontSize: 12, color: AC.textMuted)),
+                  ],
+                ),
+                const Spacer(),
+                if (pendingCount > 0)
+                  Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AC.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AC.warning.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: AC.warning, size: 13),
+                        const SizedBox(width: 6),
+                        Text('$pendingCount bekliyor', style: GoogleFonts.inter(color: AC.warning, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                // Search
+                Container(
+                  width: 220,
+                  height: 38,
+                  decoration: BoxDecoration(color: AC.card, borderRadius: BorderRadius.circular(10), border: Border.all(color: AC.border)),
+                  child: TextField(
+                    controller: _searchController,
+                    style: GoogleFonts.inter(color: AC.text, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Şikayet ara...',
+                      hintStyle: GoogleFonts.inter(color: AC.textMuted, fontSize: 13),
+                      prefixIcon: const Icon(Icons.search_rounded, color: AC.textMuted, size: 16),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      fillColor: Colors.transparent,
+                      filled: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _IconBtn(icon: Icons.refresh_rounded, onTap: _fetchReports),
+              ],
             ),
-          ),
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: const Color(0xFFE14eca),
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.grey,
-          labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12),
-          tabs: const [
-            Tab(text: "📥 GELENLER", icon: Icon(Icons.inbox, size: 20)),
-            Tab(text: "✅ ÇÖZÜLENLER", icon: Icon(Icons.check_circle_outline, size: 20)),
-            Tab(text: "🗂️ ARŞİV", icon: Icon(Icons.archive_outlined, size: 20)),
+            const SizedBox(height: 20),
+
+            // Tab bar
+            Container(
+              decoration: BoxDecoration(
+                color: AC.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AC.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _Tab(label: 'Bekleyenler', index: 0, tabController: _tabController,
+                    count: _getTabList('pending').length, countColor: AC.warning),
+                  _Tab(label: 'Çözülenler', index: 1, tabController: _tabController,
+                    count: _getTabList('resolved').length, countColor: AC.success),
+                  _Tab(label: 'Arşiv', index: 2, tabController: _tabController,
+                    count: _getTabList('archived').length, countColor: AC.textMuted),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Content
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(color: AC.indigo))
+                  : IndexedStack(
+                      index: _tabController.index,
+                      children: [
+                        _buildList('pending'),
+                        _buildList('resolved'),
+                        _buildList('archived'),
+                      ],
+                    ),
+            ),
           ],
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-        controller: _tabController,
-        children: [
-          _buildReportList('pending'),
-          _buildReportList('resolved'),
-          _buildReportList('archived'),
-        ],
       ),
     );
   }
 
-  Widget _buildReportList(String statusFilter) {
-    final list = _filteredReports.where((r) {
-      final status = r['status'] ?? 'pending';
-      if (statusFilter == 'pending') return status == 'pending';
-      return status == statusFilter;
-    }).toList();
-
+  Widget _buildList(String status) {
+    final list = _getTabList(status);
     if (list.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.filter_list_off, size: 64, color: Colors.white12),
-            const SizedBox(height: 16),
-            Text("Kayıt yok.", style: GoogleFonts.poppins(color: Colors.white24)),
+            Icon(Icons.inbox_outlined, size: 40, color: AC.textMuted),
+            const SizedBox(height: 12),
+            Text('Kayıt yok', style: GoogleFonts.inter(color: AC.textMuted, fontSize: 13)),
           ],
         ),
       );
     }
-
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
       itemCount: list.length,
-      itemBuilder: (context, index) {
-        final report = list[index];
-        // 🔥 YENİ: Akıllı Item Widget'ını kullanıyoruz
-        return ReportItemWidget(
-          reportData: report,
-          statusFilter: statusFilter,
-          onRefresh: _refreshList,
-          onDetailTap: () => _showSmartDetailDialog(report),
-        );
-      },
+      itemBuilder: (_, i) => _ReportCard(
+        reportData: list[i],
+        status: status,
+        onRefresh: _fetchReports,
+        onDetailTap: () => _showDetailDialog(list[i]),
+      ),
     );
   }
 
-  // --- DETAY PENCERESİ (İstatistikler Eklendi) ---
-  void _showSmartDetailDialog(Map<String, dynamic> report) {
+  void _showDetailDialog(Map<String, dynamic> report) {
     showDialog(
       context: context,
-      builder: (ctx) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(20),
-          child: Container(
-            width: 1100,
-            height: 800,
-            decoration: BoxDecoration(color: const Color(0xFF212332), borderRadius: BorderRadius.circular(16)),
-            child: FutureBuilder(
-              future: report['type'] == 'user'
-                  ? Supabase.instance.client.from('profiles').select().eq('id', report['target_id']).maybeSingle()
-                  : Supabase.instance.client.from('posts').select('*, profiles(*), comments(*, profiles(*))').eq('id', report['target_id']).order('created_at', referencedTable: 'comments', ascending: false).maybeSingle(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                if (snapshot.hasError || snapshot.data == null) return const Center(child: Text("İçerik bulunamadı (Silinmiş olabilir).", style: TextStyle(color: Colors.white)));
-
-                final data = snapshot.data as Map<String, dynamic>;
-
-                if (report['type'] == 'user') {
-                  // KULLANICI DETAYI
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircleAvatar(radius: 80, backgroundImage: NetworkImage(data['avatar_url'] ?? '')),
-                        const SizedBox(height: 20),
-                        Text("@${data['username']}", style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                        const SizedBox(height: 20),
-                        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)), child: Text(data['bio'] ?? 'Bio yok', style: const TextStyle(color: Colors.white70))),
-                        const SizedBox(height: 40),
-                        ElevatedButton.icon(icon: const Icon(Icons.close), label: const Text("Kapat"), onPressed: () => Navigator.pop(ctx))
-                      ],
-                    ),
-                  );
-                } else {
-                  // POST DETAYI
-                  final owner = data['profiles'] ?? {};
-                  final comments = List<Map<String, dynamic>>.from(data['comments'] ?? []);
-                  // İstatistikleri çekiyoruz (veritabanında like_count/harlama_count yoksa 0 döner)
-                  final likeCount = data['like_count'] ?? 0;
-                  final harlamaCount = data['harlama_count'] ?? 0; // Eğer sütun adı farklıysa burayı düzelt
-
-                  return Row(
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
+        child: Container(
+          width: 1000,
+          height: 700,
+          decoration: BoxDecoration(color: AC.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AC.border)),
+          child: FutureBuilder(
+            future: report['type'] == 'user'
+                ? Supabase.instance.client.from('profiles').select().eq('id', report['target_id']).maybeSingle()
+                : Supabase.instance.client.from('posts').select('*, profiles(*), comments(*, profiles(*))').eq('id', report['target_id']).order('created_at', referencedTable: 'comments', ascending: false).maybeSingle(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: AC.indigo));
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // SOL: GÖRSEL
-                      Expanded(
-                        flex: 6,
-                        child: Container(
-                          decoration: const BoxDecoration(color: Colors.black, borderRadius: BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16))),
-                          child: Center(
-                            child: data['image_url'] != null
-                                ? Image.network(data['image_url'], fit: BoxFit.contain)
-                                : Text(data['content'] ?? '', textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 24, color: Colors.white)),
-                          ),
-                        ),
-                      ),
-                      // SAĞ: YORUMLAR VE BİLGİ
-                      Expanded(
-                        flex: 4,
-                        child: Column(
-                          children: [
-                            // Başlık Kısmı
-                            Padding(
-                              padding: const EdgeInsets.all(12.0),
-                              child: Row(
-                                children: [
-                                  CircleAvatar(backgroundImage: NetworkImage(owner['avatar_url'] ?? '')),
-                                  const SizedBox(width: 10),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("@${owner['username']}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                      Text(timeago.format(DateTime.parse(data['created_at'])), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                                    ],
-                                  ),
-                                  const Spacer(),
-                                  IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(ctx)),
-                                ],
-                              ),
-                            ),
-
-                            // 🔥 YENİ: İSTATİSTİKLER (BEĞENİ VE HARLAMA)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.favorite, color: Colors.redAccent, size: 20),
-                                  const SizedBox(width: 6),
-                                  Text("$likeCount", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 4),
-                                  const Text("Beğeni", style: TextStyle(color: Colors.grey, fontSize: 12)),
-
-                                  const SizedBox(width: 20),
-
-                                  Icon(Icons.local_fire_department, color: Colors.orange, size: 20),
-                                  const SizedBox(width: 6),
-                                  Text("$harlamaCount", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 4),
-                                  const Text("Harlama", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                            const Divider(color: Colors.white10),
-
-                            // Yorumlar Listesi
-                            Expanded(
-                              child: comments.isEmpty
-                                  ? const Center(child: Text("Yorum yok.", style: TextStyle(color: Colors.white24)))
-                                  : ListView.builder(
-                                padding: const EdgeInsets.all(16),
-                                itemCount: comments.length,
-                                itemBuilder: (context, index) {
-                                  final c = comments[index];
-                                  final isPlaying = _currentlyPlayingUrl == c['audio_url'];
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 16.0),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        CircleAvatar(backgroundImage: NetworkImage(c['profiles']?['avatar_url'] ?? ''), radius: 16),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(c['profiles']?['username'] ?? 'User', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                              const SizedBox(height: 4),
-                                              if (c['audio_url'] != null)
-                                                GestureDetector(
-                                                  onTap: () => _playAudio(c['audio_url']),
-                                                  child: Container(
-                                                    padding: const EdgeInsets.all(8),
-                                                    decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.blueAccent)),
-                                                    child: Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Icon(isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill, color: Colors.blueAccent, size: 30),
-                                                        const SizedBox(width: 8),
-                                                        Text(isPlaying ? "Çalıyor..." : "Sesli Yorum", style: const TextStyle(color: Colors.white)),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                )
-                                              else
-                                                Text(c['content'] ?? '', style: const TextStyle(color: Colors.white70)),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      const Icon(Icons.broken_image_outlined, color: AC.textMuted, size: 40),
+                      const SizedBox(height: 12),
+                      Text('İçerik bulunamadı (silinmiş olabilir)', style: GoogleFonts.inter(color: AC.textMuted, fontSize: 13)),
+                      const SizedBox(height: 16),
+                      _DialogBtn(label: 'Kapat', onTap: () => Navigator.pop(ctx)),
                     ],
-                  );
-                }
-              },
-            ),
+                  ),
+                );
+              }
+
+              final data = snapshot.data as Map<String, dynamic>;
+
+              if (report['type'] == 'user') {
+                return _UserDetailPane(data: data, onClose: () => Navigator.pop(ctx));
+              } else {
+                return _PostDetailPane(
+                  data: data,
+                  onClose: () => Navigator.pop(ctx),
+                  currentlyPlayingUrl: _currentlyPlayingUrl,
+                  onPlayAudio: _playAudio,
+                );
+              }
+            },
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
-// 🔥🔥 YENİ VE GÜÇLÜ ITEM WIDGET (3 Uyarı Kuralı Burada) 🔥🔥
-class ReportItemWidget extends StatefulWidget {
-  final Map<String, dynamic> reportData;
-  final String statusFilter;
-  final VoidCallback onRefresh;
-  final VoidCallback onDetailTap;
+// ── Sub-widgets ───────────────────────────────────────────────────────────────
 
-  const ReportItemWidget({
-    super.key,
-    required this.reportData,
-    required this.statusFilter,
-    required this.onRefresh,
-    required this.onDetailTap,
-  });
+class _Tab extends StatelessWidget {
+  final String label;
+  final int index;
+  final TabController tabController;
+  final int count;
+  final Color countColor;
+  const _Tab({required this.label, required this.index, required this.tabController, required this.count, required this.countColor});
 
   @override
-  State<ReportItemWidget> createState() => _ReportItemWidgetState();
+  Widget build(BuildContext context) {
+    final isSelected = tabController.index == index;
+    return GestureDetector(
+      onTap: () => tabController.animateTo(index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AC.bg : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: isSelected ? Border.all(color: AC.border) : null,
+        ),
+        child: Row(
+          children: [
+            Text(label, style: GoogleFonts.inter(
+              color: isSelected ? AC.text : AC.textSub,
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            )),
+            if (count > 0) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: countColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('$count', style: GoogleFonts.inter(color: countColor, fontSize: 10, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _ReportItemWidgetState extends State<ReportItemWidget> {
-  final SupabaseClient _supabase = Supabase.instance.client;
+class _ReportCard extends StatefulWidget {
+  final Map<String, dynamic> reportData;
+  final String status;
+  final VoidCallback onRefresh;
+  final VoidCallback onDetailTap;
+  const _ReportCard({required this.reportData, required this.status, required this.onRefresh, required this.onDetailTap});
+
+  @override
+  State<_ReportCard> createState() => _ReportCardState();
+}
+
+class _ReportCardState extends State<_ReportCard> {
   bool _isLoading = false;
-  int _userWarningCount = 0;
+  int _warningCount = 0;
 
   @override
   void initState() {
     super.initState();
-    if (widget.statusFilter == 'pending') {
-      _fetchUserWarningCount();
-    }
+    if (widget.status == 'pending') _fetchWarningCount();
   }
 
-  Future<void> _fetchUserWarningCount() async {
-    final userId = widget.reportData['reported_user_id']; // reported_user_id yoksa tablonuzu kontrol edin (örn: target_id eğer type='user' ise)
-
-    // Eğer 'reported_user_id' tabloda yoksa, ve post şikayetiyse, postun sahibini bulmak gerekebilir.
-    // Şimdilik tabloda 'reporter' değil, 'suçlu' olan kişinin ID'sinin report row'unda olduğunu varsayıyoruz.
-    // Eğer yoksa, reportData['target_id'] üzerinden profile gitmeliyiz.
-
-    // Basitlik adına target_id'nin bir user olduğunu veya post sahibine ulaştığımızı varsayalım.
-    // Düzeltme: Genelde rapor tablosunda 'reported_by' ve 'reported_user' olur.
-
-    // Eğer reportData'da 'reported_user_id' sütunu varsa:
-    if (userId != null) {
-      final response = await _supabase.from('profiles').select('warning_count').eq('id', userId).maybeSingle();
-      if (response != null && mounted) {
-        setState(() {
-          _userWarningCount = response['warning_count'] ?? 0;
-        });
-      }
-    }
+  Future<void> _fetchWarningCount() async {
+    final userId = widget.reportData['reported_user_id'];
+    if (userId == null) return;
+    final resp = await Supabase.instance.client.from('profiles').select('warning_count').eq('id', userId).maybeSingle();
+    if (resp != null && mounted) setState(() => _warningCount = resp['warning_count'] ?? 0);
   }
-
-  // --- EYLEMLER ---
 
   Future<void> _updateStatus(String newStatus) async {
     setState(() => _isLoading = true);
     try {
-      await _supabase.from('reports').update({'status': newStatus}).eq('id', widget.reportData['id']);
+      await Supabase.instance.client.from('reports').update({'status': newStatus}).eq('id', widget.reportData['id']);
       widget.onRefresh();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(newStatus == 'resolved' ? "Çözüldü" : "Arşivlendi"), backgroundColor: Colors.green));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e")));
+      if (mounted) _showSnack('Hata: $e', AC.danger);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // 1. UYAR (Sayacı arttır, bildirim at, şikayeti çözüldü yapma - belki?)
   Future<void> _warnUser() async {
+    final userId = widget.reportData['reported_user_id'] ?? widget.reportData['target_id'];
+    if (userId == null) return;
     setState(() => _isLoading = true);
-    final userId = widget.reportData['reported_user_id'] ?? widget.reportData['target_id']; // User ID bulma mantığı
-
     try {
-      // Sayacı arttır
-      final newCount = _userWarningCount + 1;
-      await _supabase.from('profiles').update({'warning_count': newCount}).eq('id', userId);
-
-      // Bildirim at
-      await _supabase.from('notifications').insert({
+      final newCount = _warningCount + 1;
+      await Supabase.instance.client.from('profiles').update({'warning_count': newCount}).eq('id', userId);
+      await Supabase.instance.client.from('notifications').insert({
         'user_id': userId,
         'content': 'Topluluk kurallarını ihlal ettiğiniz için uyarıldınız. (Uyarı $newCount/3)',
         'type': 'warning',
       });
-
       if (mounted) {
-        setState(() => _userWarningCount = newCount);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Kullanıcı uyarıldı! (Toplam: $newCount)")));
+        setState(() => _warningCount = newCount);
+        _showSnack('Kullanıcı uyarıldı ($newCount/3)', AC.warning);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Uyarı Hatası: $e")));
+      if (mounted) _showSnack('Uyarı hatası: $e', AC.danger);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // 2. SİL (Kullanıcıyı veya içeriği sil)
   Future<void> _deleteTarget() async {
     final type = widget.reportData['type'];
     final targetId = widget.reportData['target_id'];
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF27293D),
-        title: const Text("Kalıcı Olarak Sil?", style: TextStyle(color: Colors.white)),
-        content: Text("Bu ${type == 'user' ? 'kullanıcıyı' : 'içeriği'} silmek üzeresin. Bu işlem geri alınamaz!", style: const TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("İptal", style: TextStyle(color: Colors.grey))),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red), onPressed: () => Navigator.pop(ctx, true), child: const Text("Evet, Yok Et")),
-        ],
+      builder: (ctx) => Dialog(
+        backgroundColor: AC.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: AC.border)),
+        child: Container(
+          width: 360,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Kalıcı Olarak Sil?', style: GoogleFonts.inter(color: AC.text, fontSize: 15, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 10),
+              Text(
+                'Bu ${type == 'user' ? 'kullanıcıyı' : 'içeriği'} silmek üzeresin. Bu işlem geri alınamaz!',
+                style: GoogleFonts.inter(color: AC.textSub, fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _DialogBtn(label: 'İptal', onTap: () => Navigator.pop(ctx, false)),
+                  const SizedBox(width: 10),
+                  _DialogBtn(label: 'Sil', danger: true, onTap: () => Navigator.pop(ctx, true)),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
 
     if (confirm != true) return;
-
     setState(() => _isLoading = true);
     try {
       if (type == 'user') {
-        await _supabase.rpc('delete_user_by_admin', params: {'target_user_id': targetId});
+        await Supabase.instance.client.rpc('delete_user_by_admin', params: {'target_user_id': targetId});
       } else {
-        await _supabase.rpc('delete_content_by_admin', params: {'target_id': targetId, 'content_type': type});
+        await Supabase.instance.client.rpc('delete_content_by_admin', params: {'target_id': targetId, 'content_type': type});
       }
-
-      // Şikayeti çözüldü yap
-      await _supabase.from('reports').update({'status': 'resolved'}).eq('id', widget.reportData['id']);
-
+      await Supabase.instance.client.from('reports').update({'status': 'resolved'}).eq('id', widget.reportData['id']);
       widget.onRefresh();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Silme başarılı."), backgroundColor: Colors.green));
+      if (mounted) _showSnack('Silme başarılı', AC.success);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Silme Hatası: $e"), backgroundColor: Colors.red));
+      if (mounted) _showSnack('Silme hatası: $e', AC.danger);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  void _showSnack(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: GoogleFonts.inter(fontSize: 13)),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = widget.reportData;
-    final reporter = r['reporter'] ?? {};
-    final isPending = widget.statusFilter == 'pending';
-    final isArchived = widget.statusFilter == 'archived';
+    final reporter = r['reporter'] as Map<String, dynamic>? ?? {};
+    final isPending = widget.status == 'pending';
+    final isArchived = widget.status == 'archived';
+    final avatarUrl = reporter['avatar_url']?.toString();
+
+    String timeStr = '';
+    try { timeStr = timeago.format(DateTime.parse(r['created_at'])); } catch (_) {}
+
+    final typeColor = r['type'] == 'user' ? AC.purple : AC.info;
+    final typeLabel = (r['type'] ?? 'post').toString().toUpperCase();
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF27293D),
+        color: AC.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AC.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Üst Kısım: Profil ve İçerik Bilgisi
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
               children: [
-                CircleAvatar(backgroundImage: NetworkImage(reporter['avatar_url'] ?? ''), radius: 18, backgroundColor: Colors.grey[800]),
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AC.surface,
+                  backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                  child: avatarUrl == null ? const Icon(Icons.person, size: 14, color: AC.textMuted) : null,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -518,115 +501,387 @@ class _ReportItemWidgetState extends State<ReportItemWidget> {
                     children: [
                       Row(
                         children: [
-                          Text("@${reporter['username'] ?? 'Gizli'}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                          const SizedBox(width: 8),
-                          if (isPending && _userWarningCount > 0)
-                            Container(
-                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.red.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
-                              child: Text("$_userWarningCount Uyarı", style: TextStyle(color: Colors.redAccent, fontSize: 10)),
-                            )
+                          Text('@${reporter['username'] ?? 'Gizli'}',
+                              style: GoogleFonts.inter(color: AC.text, fontSize: 13, fontWeight: FontWeight.w600)),
+                          if (isPending && _warningCount > 0) ...[
+                            const SizedBox(width: 8),
+                            StatusBadge(text: '$_warningCount uyarı', color: AC.danger),
+                          ],
                         ],
                       ),
-                      Text(timeago.format(DateTime.parse(r['created_at'])), style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10)),
+                      Text(timeStr, style: GoogleFonts.inter(color: AC.textMuted, fontSize: 11)),
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: r['type'] == 'user' ? Colors.purple.withOpacity(0.2) : Colors.blue.withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
-                  child: Text(r['type'].toString().toUpperCase(), style: TextStyle(color: r['type'] == 'user' ? Colors.purpleAccent : Colors.blueAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-                )
+                StatusBadge(text: typeLabel, color: typeColor),
               ],
             ),
           ),
-
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 16),
-                  const SizedBox(width: 6),
-                  Text(r['reason'] ?? '', style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
-                ]),
-                const SizedBox(height: 4),
-                Text(r['description'] ?? '', style: const TextStyle(color: Colors.white70), maxLines: 2, overflow: TextOverflow.ellipsis),
+                Row(
+                  children: [
+                    const Icon(Icons.flag_rounded, color: AC.warning, size: 13),
+                    const SizedBox(width: 6),
+                    Text(r['reason'] ?? '', style: GoogleFonts.inter(color: AC.warning, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                if ((r['description'] ?? '').toString().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(r['description'] ?? '', style: GoogleFonts.inter(color: AC.textSub, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                ],
               ],
             ),
           ),
-
           const SizedBox(height: 12),
-          const Divider(color: Colors.white10, height: 1),
-
-          // Alt Kısım: Butonlar
+          Container(height: 1, color: AC.border),
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // 1. İNCELE (Her zaman var)
-                OutlinedButton.icon(
-                  onPressed: widget.onDetailTap,
-                  icon: const Icon(Icons.visibility, size: 16, color: Colors.blueGrey),
-                  label: const Text("İncele", style: TextStyle(color: Colors.blueGrey)),
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.blueGrey)),
-                ),
+                _ActionBtn(label: 'İncele', icon: Icons.visibility_outlined, color: AC.info, onTap: widget.onDetailTap),
                 const SizedBox(width: 8),
-
-                // 2. DURUMA GÖRE BUTONLAR
                 if (_isLoading)
-                  const Padding(padding: EdgeInsets.all(8.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)))
-
+                  const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AC.indigo))
                 else if (isPending) ...[
-                  // Arşivle
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[800]),
-                    onPressed: () => _updateStatus('archived'),
-                    child: const Text("Arşiv", style: TextStyle(color: Colors.white70)),
-                  ),
+                  _ActionBtn(label: 'Arşiv', icon: Icons.archive_outlined, color: AC.textMuted, onTap: () => _updateStatus('archived')),
                   const SizedBox(width: 8),
-
-                  // UYARI SİSTEMİ MANTIĞI
-                  if (_userWarningCount >= 3)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red[900]),
-                      onPressed: _deleteTarget,
-                      icon: const Icon(Icons.delete_forever, size: 16),
-                      label: const Text("İhlal Sınırı Doldu: SİL"),
-                    )
+                  if (_warningCount >= 3)
+                    _ActionBtn(label: 'Sil (İhlal)', icon: Icons.delete_forever_outlined, color: AC.danger, onTap: _deleteTarget)
                   else
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800]),
-                      onPressed: _warnUser,
-                      icon: const Icon(Icons.notifications_active, size: 16),
-                      label: Text("Uyar (${3 - _userWarningCount})"),
-                    ),
-
+                    _ActionBtn(label: 'Uyar (${3 - _warningCount})', icon: Icons.notifications_active_outlined, color: AC.warning, onTap: _warnUser),
                   const SizedBox(width: 8),
-                  // Direkt Temiz Çözüldü
-                  IconButton(
-                    icon: const Icon(Icons.check_circle, color: Colors.green),
-                    tooltip: "Sorunsuz Çözüldü",
-                    onPressed: () => _updateStatus('resolved'),
-                  )
-
+                  _ActionBtn(label: 'Çözüldü', icon: Icons.check_circle_outline, color: AC.success, onTap: () => _updateStatus('resolved')),
                 ] else if (isArchived) ...[
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                    onPressed: () => _updateStatus('resolved'),
-                    child: const Text("Çözüldü Yap", style: TextStyle(color: Colors.white)),
-                  ),
+                  _ActionBtn(label: 'Çözüldü Yap', icon: Icons.check_circle_outline, color: AC.success, onTap: () => _updateStatus('resolved')),
                 ] else ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Text("TAMAMLANDI ✅", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
-                  )
-                ]
+                  Row(children: [
+                    const Icon(Icons.check_circle_rounded, color: AC.success, size: 14),
+                    const SizedBox(width: 6),
+                    Text('Tamamlandı', style: GoogleFonts.inter(color: AC.success, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ]),
+                ],
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionBtn({required this.label, required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 13),
+            const SizedBox(width: 5),
+            Text(label, style: GoogleFonts.inter(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IconBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _IconBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(color: AC.card, borderRadius: BorderRadius.circular(10), border: Border.all(color: AC.border)),
+        child: Icon(icon, color: AC.textSub, size: 17),
+      ),
+    );
+  }
+}
+
+class _DialogBtn extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+  final bool danger;
+  const _DialogBtn({required this.label, required this.onTap, this.primary = false, this.danger = false});
+
+  @override
+  Widget build(BuildContext context) {
+    Color bg = AC.surface;
+    Color fg = AC.textSub;
+    Color border = AC.border;
+    if (primary) { bg = AC.indigoDark; fg = Colors.white; border = AC.indigoDark; }
+    if (danger) { bg = AC.danger.withValues(alpha: 0.15); fg = AC.danger; border = AC.danger.withValues(alpha: 0.4); }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: border)),
+        child: Text(label, style: GoogleFonts.inter(color: fg, fontSize: 13, fontWeight: FontWeight.w500)),
+      ),
+    );
+  }
+}
+
+// ── Detail Panes ──────────────────────────────────────────────────────────────
+
+class _UserDetailPane extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final VoidCallback onClose;
+  const _UserDetailPane({required this.data, required this.onClose});
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarUrl = data['avatar_url']?.toString();
+    return Column(
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.fromLTRB(24, 20, 20, 20),
+          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AC.border))),
+          child: Row(
+            children: [
+              Text('Kullanıcı Detayı', style: GoogleFonts.inter(color: AC.text, fontSize: 15, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              GestureDetector(onTap: onClose, child: const Icon(Icons.close_rounded, color: AC.textMuted, size: 18)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 56,
+                  backgroundColor: AC.card,
+                  backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                  child: avatarUrl == null ? const Icon(Icons.person, size: 40, color: AC.textMuted) : null,
+                ),
+                const SizedBox(height: 16),
+                Text('@${data['username'] ?? ''}', style: GoogleFonts.inter(color: AC.indigo, fontSize: 22, fontWeight: FontWeight.w700)),
+                if ((data['full_name'] ?? '').toString().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(data['full_name'], style: GoogleFonts.inter(color: AC.text, fontSize: 15)),
+                ],
+                const SizedBox(height: 20),
+                if ((data['bio'] ?? '').toString().isNotEmpty)
+                  Container(
+                    width: 400,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(color: AC.card, borderRadius: BorderRadius.circular(10), border: Border.all(color: AC.border)),
+                    child: Text(data['bio'], style: GoogleFonts.inter(color: AC.textSub, fontSize: 13), textAlign: TextAlign.center),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PostDetailPane extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final VoidCallback onClose;
+  final String? currentlyPlayingUrl;
+  final Future<void> Function(String) onPlayAudio;
+  const _PostDetailPane({required this.data, required this.onClose, required this.currentlyPlayingUrl, required this.onPlayAudio});
+
+  @override
+  Widget build(BuildContext context) {
+    final owner = data['profiles'] as Map<String, dynamic>? ?? {};
+    final comments = List<Map<String, dynamic>>.from(data['comments'] ?? []);
+    final likeCount = data['like_count'] ?? 0;
+    final harlamaCount = data['harlama_count'] ?? 0;
+    String timeStr = '';
+    try { timeStr = timeago.format(DateTime.parse(data['created_at'])); } catch (_) {}
+
+    return Row(
+      children: [
+        // Media side
+        Expanded(
+          flex: 6,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
+            ),
+            child: Center(
+              child: data['image_url'] != null
+                  ? ClipRRect(
+                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
+                      child: Image.network(data['image_url'], fit: BoxFit.contain),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Text(data['content'] ?? '', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 20, color: AC.text)),
+                    ),
+            ),
+          ),
+        ),
+        // Info side
+        Expanded(
+          flex: 4,
+          child: Column(
+            children: [
+              // Post header
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AC.border))),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: AC.card,
+                      backgroundImage: owner['avatar_url'] != null ? NetworkImage(owner['avatar_url']) : null,
+                      child: owner['avatar_url'] == null ? const Icon(Icons.person, size: 14, color: AC.textMuted) : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('@${owner['username'] ?? ''}', style: GoogleFonts.inter(color: AC.text, fontSize: 13, fontWeight: FontWeight.w600)),
+                          Text(timeStr, style: GoogleFonts.inter(color: AC.textMuted, fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(onTap: onClose, child: const Icon(Icons.close_rounded, color: AC.textMuted, size: 18)),
+                  ],
+                ),
+              ),
+              // Stats
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    _StatPill(icon: Icons.favorite_rounded, value: likeCount, color: AC.danger),
+                    const SizedBox(width: 10),
+                    _StatPill(icon: Icons.local_fire_department_rounded, value: harlamaCount, color: Colors.orange),
+                    const SizedBox(width: 10),
+                    _StatPill(icon: Icons.comment_outlined, value: comments.length, color: AC.info),
+                  ],
+                ),
+              ),
+              Container(height: 1, color: AC.border),
+              // Comments
+              Expanded(
+                child: comments.isEmpty
+                    ? Center(child: Text('Yorum yok', style: GoogleFonts.inter(color: AC.textMuted, fontSize: 13)))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: comments.length,
+                        itemBuilder: (_, i) {
+                          final c = comments[i];
+                          final isPlaying = currentlyPlayingUrl == c['audio_url'];
+                          final commenterUrl = c['profiles']?['avatar_url']?.toString();
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: AC.card,
+                                  backgroundImage: commenterUrl != null ? NetworkImage(commenterUrl) : null,
+                                  child: commenterUrl == null ? const Icon(Icons.person, size: 12, color: AC.textMuted) : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(c['profiles']?['username'] ?? 'User',
+                                          style: GoogleFonts.inter(color: AC.text, fontSize: 12, fontWeight: FontWeight.w600)),
+                                      const SizedBox(height: 4),
+                                      if (c['audio_url'] != null)
+                                        GestureDetector(
+                                          onTap: () => onPlayAudio(c['audio_url']),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: AC.info.withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(20),
+                                              border: Border.all(color: AC.info.withValues(alpha: 0.3)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+                                                    color: AC.info, size: 22),
+                                                const SizedBox(width: 6),
+                                                Text(isPlaying ? 'Çalıyor...' : 'Sesli Yorum',
+                                                    style: GoogleFonts.inter(color: AC.info, fontSize: 12)),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        Text(c['content'] ?? '', style: GoogleFonts.inter(color: AC.textSub, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatPill extends StatelessWidget {
+  final IconData icon;
+  final int value;
+  final Color color;
+  const _StatPill({required this.icon, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 12),
+          const SizedBox(width: 4),
+          Text('$value', style: GoogleFonts.inter(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
         ],
       ),
     );

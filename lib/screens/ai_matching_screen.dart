@@ -414,15 +414,21 @@ class _MatchesDialogState extends State<_MatchesDialog> {
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'match-users',
-        body: {'user_id': widget.userId, 'limit': 10},
+        body: {'user_id': widget.userId},
       );
-      final data = res.data as Map<String, dynamic>?;
-      final matches = (data?['matches'] as List?) ?? [];
+      if (res.status != 200 || res.data == null) {
+        setState(() => _loading = false);
+        return;
+      }
+      final List<dynamic> matches = res.data is List
+          ? res.data as List
+          : ((res.data as Map)['matches'] as List? ?? []);
       setState(() {
-        _matches = matches.cast<Map<String, dynamic>>();
+        _matches = matches.whereType<Map<String, dynamic>>().toList();
         _loading = false;
       });
     } catch (e) {
+      debugPrint('Matches fetch error: $e');
       setState(() => _loading = false);
     }
   }
